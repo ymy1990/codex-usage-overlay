@@ -1,0 +1,7 @@
+{
+  "remaining_percent": null,
+  "remaining_text": "未获取",
+  "reset_at": "",
+  "updated_at": "",
+  "note": "如果你有企业 Analytics/API 或其他脚本拿到的剩余百分比，把 remaining_percent 改成 0-100 的数字，悬浮条会自动显示。"
+}
