@@ -5,8 +5,11 @@ An unofficial, lightweight Windows overlay for monitoring Codex usage limits.
 一款非官方、轻量级的 Windows Codex 用量悬浮工具。
 
 <p align="center">
-  <img src="docs/images/codex-usage-red.png" alt="Codex Usage Overlay - red status" width="49%">
-  <img src="docs/images/codex-usage-yellow.png" alt="Codex Usage Overlay - yellow status" width="49%">
+  <img src="docs/images/codex-usage-red.png" alt="Codex Usage Overlay - red status" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/images/codex-usage-yellow.png" alt="Codex Usage Overlay - yellow status" width="100%">
 </p>
 
 ## English
