@@ -73,6 +73,13 @@ TPM_RETURNCMD = 0x0100
 TRAY_EXIT_COMMAND = 1001
 
 MONITOR_DEFAULTTONEAREST = 0x00000002
+GA_ROOT = 2
+GWL_EXSTYLE = -20
+WS_EX_NOACTIVATE = 0x08000000
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOZORDER = 0x0004
+SWP_FRAMECHANGED = 0x0020
 
 
 class RECT(ctypes.Structure):
@@ -241,6 +248,13 @@ def monitor_rect_for_window(hwnd: int) -> RECT | None:
     if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
         return None
     return info.rcMonitor
+
+
+def root_window_handle(hwnd: int) -> int:
+    get_ancestor = user32.GetAncestor
+    get_ancestor.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.UINT]
+    get_ancestor.restype = ctypes.wintypes.HWND
+    return int(get_ancestor(hwnd, GA_ROOT) or hwnd)
 
 
 def find_codex_window() -> CodexWindow | None:
@@ -802,6 +816,9 @@ class OverlayApp:
         self.confirming_shutdown = False
         self.tray = None
         self._build_ui()
+        self.root.update_idletasks()
+        self.overlay_hwnd = root_window_handle(self.root.winfo_id())
+        self._make_overlay_non_activating()
         self.tray = SystemTrayIcon(self.root, self.shutdown)
         self.refresh_usage()
         self.follow_codex()
@@ -837,6 +854,41 @@ class OverlayApp:
             font=("Microsoft YaHei UI", 11, "bold"),
         )
         close_button.pack(side="right", padx=(2, 8), pady=7)
+
+    def _make_overlay_non_activating(self) -> None:
+        user32.GetWindowLongW.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
+        user32.GetWindowLongW.restype = ctypes.c_long
+        user32.SetWindowLongW.argtypes = [
+            ctypes.wintypes.HWND,
+            ctypes.c_int,
+            ctypes.c_long,
+        ]
+        user32.SetWindowLongW.restype = ctypes.c_long
+        user32.SetWindowPos.argtypes = [
+            ctypes.wintypes.HWND,
+            ctypes.wintypes.HWND,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.wintypes.UINT,
+        ]
+        user32.SetWindowPos.restype = ctypes.wintypes.BOOL
+        ex_style = user32.GetWindowLongW(self.overlay_hwnd, GWL_EXSTYLE)
+        user32.SetWindowLongW(
+            self.overlay_hwnd,
+            GWL_EXSTYLE,
+            ex_style | WS_EX_NOACTIVATE,
+        )
+        user32.SetWindowPos(
+            self.overlay_hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED,
+        )
 
     def refresh_usage(self) -> None:
         snapshot = build_snapshot()
@@ -940,6 +992,7 @@ class OverlayApp:
         if self.overlay_visible:
             return
         self.root.deiconify()
+        self._make_overlay_non_activating()
         self.overlay_visible = True
 
     def hide_overlay(self) -> None:
