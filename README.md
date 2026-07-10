@@ -64,6 +64,10 @@ Windows 任务栏通知区域的图标也会同步显示红、黄、绿状态。
 
 ## Quick Start / 快速启动
 
+**Recommended:** Download `CodexUsageOverlay-Windows.zip` from [Releases](https://github.com/ymy1990/codex-usage-overlay/releases), extract it, and double-click `run_overlay.bat`. The packaged Windows version does not require Python.
+
+推荐方式：从 [Releases](https://github.com/ymy1990/codex-usage-overlay/releases) 下载 `CodexUsageOverlay-Windows.zip`，解压后双击 `run_overlay.bat`。该 Windows 打包版不需要安装 Python。
+
 Double-click `run_overlay.bat`, or run:
 
 双击 `run_overlay.bat`，或者运行：

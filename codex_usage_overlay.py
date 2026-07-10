@@ -6,6 +6,7 @@ import re
 import sqlite3
 import sys
 import time
+import traceback
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,7 @@ from tkinter import ttk
 
 APP_DIR = Path(__file__).resolve().parent
 USAGE_JSON = APP_DIR / "usage.json"
+ERROR_LOG = APP_DIR / "codex_usage_overlay_error.log"
 TRAY_ICON_PATH = APP_DIR / "assets" / "codex_usage_overlay_icon.ico"
 TRAY_ICON_PATHS = {
     "all": TRAY_ICON_PATH,
@@ -538,7 +540,7 @@ def build_snapshot() -> UsageSnapshot:
     if reset_at:
         detail = f"{detail} | 重置: {reset_at}"
     if data.get("error"):
-        detail = f"{detail} | {data["error"]}"
+        detail = f"{detail} | {data['error']}"
 
 
     return UsageSnapshot(remaining_text, percent, detail, updated, source)
@@ -924,11 +926,26 @@ class OverlayApp:
 
 def main() -> int:
     if os.name != "nt":
-        print("这个悬浮条目前只支持 Windows。")
+        print("This overlay currently supports Windows only.")
         return 1
-    app = OverlayApp()
-    app.run()
-    return 0
+    try:
+        app = OverlayApp()
+        app.run()
+        return 0
+    except Exception:
+        details = traceback.format_exc()
+        try:
+            ERROR_LOG.write_text(details, encoding="utf-8")
+        except Exception:
+            pass
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            "Codex Usage Overlay failed to start.\n\n"
+            f"Details were saved to:\n{ERROR_LOG}",
+            "Codex Usage Overlay",
+            0x10,
+        )
+        return 1
 
 
 if __name__ == "__main__":
