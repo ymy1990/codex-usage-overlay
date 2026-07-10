@@ -73,6 +73,7 @@ TPM_RETURNCMD = 0x0100
 TRAY_EXIT_COMMAND = 1001
 
 MONITOR_DEFAULTTONEAREST = 0x00000002
+VK_LBUTTON = 0x01
 GA_ROOT = 2
 GWL_EXSTYLE = -20
 WS_EX_NOACTIVATE = 0x08000000
@@ -816,6 +817,7 @@ class OverlayApp:
         self.confirming_shutdown = False
         self.tray = None
         self._build_ui()
+        self.root.after(25, self._watch_close_press)
         self.root.update_idletasks()
         self.overlay_hwnd = root_window_handle(self.root.winfo_id())
         self._make_overlay_non_activating()
@@ -841,10 +843,9 @@ class OverlayApp:
         self.parts_frame.pack_forget()
         self.part_labels: list[tk.Label] = []
 
-        close_button = tk.Button(
+        self.close_button = tk.Button(
             self.frame,
             text="×",
-            command=self.confirm_shutdown,
             bg=OVERLAY_BACKGROUND,
             fg="#F9FAFB",
             activebackground="#374151",
@@ -853,7 +854,29 @@ class OverlayApp:
             width=3,
             font=("Microsoft YaHei UI", 11, "bold"),
         )
-        close_button.pack(side="right", padx=(2, 8), pady=7)
+        self.close_button.bind("<ButtonPress-1>", self._confirm_on_close_press)
+        self.close_button.pack(side="right", padx=(2, 8), pady=7)
+
+    def _confirm_on_close_press(self, _event=None) -> str:
+        self.confirm_shutdown()
+        return "break"
+
+    def _watch_close_press(self) -> None:
+        if self.closing:
+            return
+        if self.overlay_visible and user32.GetAsyncKeyState(VK_LBUTTON) & 0x8001:
+            cursor = POINT()
+            button_rect = RECT()
+            if (
+                user32.GetCursorPos(ctypes.byref(cursor))
+                and user32.GetWindowRect(
+                    self.close_button.winfo_id(), ctypes.byref(button_rect)
+                )
+                and button_rect.left <= cursor.x < button_rect.right
+                and button_rect.top <= cursor.y < button_rect.bottom
+            ):
+                self.confirm_shutdown()
+        self.root.after(25, self._watch_close_press)
 
     def _make_overlay_non_activating(self) -> None:
         user32.GetWindowLongW.argtypes = [ctypes.wintypes.HWND, ctypes.c_int]
