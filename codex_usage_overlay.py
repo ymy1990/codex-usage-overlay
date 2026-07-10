@@ -38,6 +38,7 @@ BAR_MAX_WIDTH = 600
 BAR_SIDE_MARGIN = 12
 BAR_TOP_OFFSET = 2
 WINDOW_CONTROL_SAFE_WIDTH = 170
+OVERLAY_BACKGROUND = "#1B2126"
 POLL_MS = 2500
 POSITION_MS = 400
 
@@ -71,6 +72,8 @@ TPM_RIGHTBUTTON = 0x0002
 TPM_RETURNCMD = 0x0100
 TRAY_EXIT_COMMAND = 1001
 
+MONITOR_DEFAULTTONEAREST = 0x00000002
+
 
 class RECT(ctypes.Structure):
     _fields_ = [
@@ -78,6 +81,15 @@ class RECT(ctypes.Structure):
         ("top", ctypes.c_long),
         ("right", ctypes.c_long),
         ("bottom", ctypes.c_long),
+    ]
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.wintypes.DWORD),
+        ("rcMonitor", RECT),
+        ("rcWork", RECT),
+        ("dwFlags", ctypes.wintypes.DWORD),
     ]
 
 
@@ -214,6 +226,21 @@ def is_codex_foreground() -> bool:
     if not hwnd:
         return False
     return _is_codex_shell(_window_pid(hwnd), _window_text(hwnd))
+
+
+def monitor_rect_for_window(hwnd: int) -> RECT | None:
+    monitor_from_window = user32.MonitorFromWindow
+    monitor_from_window.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.DWORD]
+    monitor_from_window.restype = ctypes.wintypes.HANDLE
+    monitor = monitor_from_window(hwnd, MONITOR_DEFAULTTONEAREST)
+    if not monitor:
+        return None
+
+    info = MONITORINFO()
+    info.cbSize = ctypes.sizeof(MONITORINFO)
+    if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        return None
+    return info.rcMonitor
 
 
 def find_codex_window() -> CodexWindow | None:
@@ -761,7 +788,7 @@ class OverlayApp:
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", 0.96)
-        self.root.configure(bg="#111827")
+        self.root.configure(bg=OVERLAY_BACKGROUND)
 
         self.window_found = False
         self.overlay_visible = True
@@ -773,20 +800,20 @@ class OverlayApp:
         self.follow_codex()
 
     def _build_ui(self) -> None:
-        self.frame = tk.Frame(self.root, bg="#111827", height=BAR_HEIGHT)
+        self.frame = tk.Frame(self.root, bg=OVERLAY_BACKGROUND, height=BAR_HEIGHT)
         self.frame.pack(fill="both", expand=True)
 
         self.detail_label = tk.Label(
             self.frame,
             text="等待 Codex/ChatGPT 窗口",
-            bg="#111827",
+            bg=OVERLAY_BACKGROUND,
             fg="#CBD5E1",
             font=("Microsoft YaHei UI", 10),
             anchor="w",
         )
         self.detail_label.pack(side="left", fill="x", expand=True, padx=(14, 8))
 
-        self.parts_frame = tk.Frame(self.frame, bg="#111827")
+        self.parts_frame = tk.Frame(self.frame, bg=OVERLAY_BACKGROUND)
         self.parts_frame.pack_forget()
         self.part_labels: list[tk.Label] = []
 
@@ -794,7 +821,7 @@ class OverlayApp:
             self.frame,
             text="×",
             command=self.shutdown,
-            bg="#1F2937",
+            bg=OVERLAY_BACKGROUND,
             fg="#F9FAFB",
             activebackground="#374151",
             activeforeground="#FFFFFF",
@@ -851,7 +878,7 @@ class OverlayApp:
             ]
 
         while len(self.part_labels) < len(parts):
-            label = tk.Label(self.parts_frame, bg="#111827", anchor="w")
+            label = tk.Label(self.parts_frame, bg=OVERLAY_BACKGROUND, anchor="w")
             label.pack(side="left")
             self.part_labels.append(label)
 
@@ -883,12 +910,18 @@ class OverlayApp:
         else:
             self.window_found = True
             self.show_overlay()
-            width = min(BAR_MAX_WIDTH, max(360, target.width - BAR_SIDE_MARGIN * 2))
-            safe_right = target.right - WINDOW_CONTROL_SAFE_WIDTH
-            centered_x = target.left + (target.width - width) // 2
+            monitor_rect = monitor_rect_for_window(target.hwnd)
+            visible_left = max(target.left, monitor_rect.left) if monitor_rect else target.left
+            visible_top = max(target.top, monitor_rect.top) if monitor_rect else target.top
+            visible_right = min(target.right, monitor_rect.right) if monitor_rect else target.right
+            visible_width = max(240, visible_right - visible_left)
+
+            width = min(BAR_MAX_WIDTH, max(360, visible_width - BAR_SIDE_MARGIN * 2))
+            safe_right = visible_right - WINDOW_CONTROL_SAFE_WIDTH
+            centered_x = visible_left + (visible_width - width) // 2
             x = min(centered_x, safe_right - width)
-            x = max(target.left + BAR_SIDE_MARGIN, x)
-            y = target.top + BAR_TOP_OFFSET
+            x = max(visible_left + BAR_SIDE_MARGIN, x)
+            y = max(target.top + BAR_TOP_OFFSET, visible_top)
             self.root.geometry(f"{width}x{BAR_HEIGHT}+{x}+{y}")
         if self.overlay_visible:
             self.root.lift()
