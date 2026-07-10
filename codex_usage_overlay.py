@@ -26,6 +26,11 @@ STATE_DB = CODEX_DIR / "state_5.sqlite"
 LOGS_DB = CODEX_DIR / "logs_2.sqlite"
 SESSIONS_DIR = CODEX_DIR / "sessions"
 
+CODEX_PROCESS_NAMES = {"codex.exe"}
+CHATGPT_PROCESS_NAMES = {"chatgpt.exe"}
+CODEX_WINDOW_TITLES = {"codex", "chatgpt"}
+CODEX_PACKAGE_MARKERS = ("openai.codex_", "openai.chatgpt_")
+
 BAR_HEIGHT = 34
 BAR_MAX_WIDTH = 600
 BAR_SIDE_MARGIN = 12
@@ -187,11 +192,26 @@ def _process_exe(pid: int) -> str:
     return Path(path).name.lower() if path else ""
 
 
+def _is_codex_shell(pid: int, title: str = "") -> bool:
+    path = _query_process_path(pid)
+    exe = Path(path).name.lower() if path else ""
+    title_key = title.strip().lower()
+    path_key = path.lower()
+
+    if exe in CODEX_PROCESS_NAMES:
+        return True
+    if exe in CHATGPT_PROCESS_NAMES:
+        if any(marker in path_key for marker in CODEX_PACKAGE_MARKERS):
+            return True
+        return title_key in CODEX_WINDOW_TITLES
+    return title_key == "codex"
+
+
 def is_codex_foreground() -> bool:
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return False
-    return _process_exe(_window_pid(hwnd)) in {"codex.exe"}
+    return _is_codex_shell(_window_pid(hwnd), _window_text(hwnd))
 
 
 def find_codex_window() -> CodexWindow | None:
@@ -203,10 +223,9 @@ def find_codex_window() -> CodexWindow | None:
 
         pid = _window_pid(hwnd)
         title = _window_text(hwnd)
-        exe = _process_exe(pid)
         minimized = bool(user32.IsIconic(hwnd))
 
-        if title.lower() == "codex" or exe == "codex.exe":
+        if _is_codex_shell(pid, title):
             rect = RECT()
             if user32.GetWindowRect(hwnd, ctypes.byref(rect)):
                 width = rect.right - rect.left
@@ -757,7 +776,7 @@ class OverlayApp:
 
         self.detail_label = tk.Label(
             self.frame,
-            text="等待 Codex 窗口",
+            text="等待 Codex/ChatGPT 窗口",
             bg="#111827",
             fg="#CBD5E1",
             font=("Microsoft YaHei UI", 10),
@@ -787,7 +806,7 @@ class OverlayApp:
         snapshot = build_snapshot()
         if self.tray is not None:
             self.tray.update_remaining(snapshot.remaining_percent)
-        text = snapshot.detail if self.window_found else f"等待 Codex 打开 | {snapshot.detail}"
+        text = snapshot.detail if self.window_found else f"等待 Codex/ChatGPT 打开 | {snapshot.detail}"
         self.render_detail(text)
         self.root.after(POLL_MS, self.refresh_usage)
 
