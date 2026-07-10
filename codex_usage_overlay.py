@@ -10,7 +10,7 @@ import traceback
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -588,6 +588,11 @@ class SystemTrayIcon:
 
         kernel32.GetModuleHandleW.restype = ctypes.wintypes.HMODULE
         user32.RegisterClassW.argtypes = [ctypes.POINTER(WNDCLASSW)]
+        user32.UnregisterClassW.argtypes = [
+            ctypes.wintypes.LPCWSTR,
+            ctypes.wintypes.HINSTANCE,
+        ]
+        user32.UnregisterClassW.restype = ctypes.wintypes.BOOL
         user32.CreateWindowExW.argtypes = [
             ctypes.wintypes.DWORD,
             ctypes.wintypes.LPCWSTR,
@@ -779,6 +784,7 @@ class SystemTrayIcon:
             self.hwnd = None
         if getattr(self, "hinstance", None):
             user32.UnregisterClassW(self.class_name, self.hinstance)
+            self.hinstance = None
 
 
 class OverlayApp:
@@ -793,6 +799,7 @@ class OverlayApp:
         self.window_found = False
         self.overlay_visible = True
         self.closing = False
+        self.confirming_shutdown = False
         self.tray = None
         self._build_ui()
         self.tray = SystemTrayIcon(self.root, self.shutdown)
@@ -820,7 +827,7 @@ class OverlayApp:
         close_button = tk.Button(
             self.frame,
             text="×",
-            command=self.shutdown,
+            command=self.confirm_shutdown,
             bg=OVERLAY_BACKGROUND,
             fg="#F9FAFB",
             activebackground="#374151",
@@ -904,7 +911,9 @@ class OverlayApp:
         if target is None:
             self.window_found = False
             self.hide_overlay()
-        elif target.minimized or not is_codex_foreground():
+        elif target.minimized or (
+            not self.confirming_shutdown and not is_codex_foreground()
+        ):
             self.window_found = False
             self.hide_overlay()
         else:
@@ -939,14 +948,34 @@ class OverlayApp:
         self.root.withdraw()
         self.overlay_visible = False
 
+    def confirm_shutdown(self) -> None:
+        if self.closing or self.confirming_shutdown:
+            return
+        self.confirming_shutdown = True
+        try:
+            confirmed = messagebox.askyesno(
+                "退出 Codex Usage Overlay",
+                "确定要退出吗？",
+                icon="question",
+                default="no",
+                parent=self.root,
+            )
+        finally:
+            self.confirming_shutdown = False
+        if confirmed:
+            self.shutdown()
+
     def shutdown(self) -> None:
         if self.closing:
             return
         self.closing = True
-        if self.tray is not None:
-            self.tray.close()
-            self.tray = None
-        self.root.destroy()
+        tray = self.tray
+        self.tray = None
+        try:
+            if tray is not None:
+                tray.close()
+        finally:
+            self.root.destroy()
 
     def run(self) -> None:
         try:
