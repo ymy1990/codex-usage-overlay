@@ -302,6 +302,28 @@ def open_readonly_sqlite(path: Path) -> sqlite3.Connection:
     return con
 
 
+def split_detail_parts(text: str) -> list[tuple[str, bool, int]]:
+    """Split detail text into normal and highlighted percentage segments."""
+    parts: list[tuple[str, bool, int]] = []
+    has_percentage = False
+
+    for section in text.split("|"):
+        section = section.strip()
+        if not section:
+            continue
+
+        left_padding = 16 if parts else 0
+        for segment in re.split(r"([0-9]+(?:\.[0-9]+)?%)", section):
+            if not segment:
+                continue
+            is_percentage = re.fullmatch(r"[0-9]+(?:\.[0-9]+)?%", segment) is not None
+            has_percentage = has_percentage or is_percentage
+            parts.append((segment, is_percentage, left_padding))
+            left_padding = 0
+
+    return parts if has_percentage else []
+
+
 def fmt_ts(value: int | float | None) -> str:
     if not value:
         return "未知"
@@ -922,13 +944,8 @@ class OverlayApp:
         self.root.after(POLL_MS, self.refresh_usage)
 
     def render_detail(self, text: str) -> None:
-        # Two-percentage format (session data)
-        match = re.match(r"^(.*?剩余 )([0-9]+%)(.*?\|\s*)(.*?剩余 )([0-9]+%)(.*?\|\s*)(.*)$", text)
-        if not match:
-            # Single-percentage format (usage.json / logs)
-            match = re.match(r"^(.*?剩余 )([0-9]+%)(\s*\|\s*)(.*)$", text)
-        single = match and match.lastindex == 4
-        if not match:
+        detail_parts = split_detail_parts(text)
+        if not detail_parts:
             self.parts_frame.pack_forget()
             self.detail_label.pack(side="left", fill="x", expand=True, padx=(14, 8))
             self.detail_label.configure(text=text)
@@ -938,26 +955,21 @@ class OverlayApp:
         if not self.parts_frame.winfo_ismapped():
             self.parts_frame.pack(side="left", fill="x", expand=True, padx=(14, 8))
 
-        if single:
-            color = self.percent_color(match.group(2))
-            parts = [
-                (match.group(1), ("Microsoft YaHei UI", 10), "#CBD5E1", 0),
-                (match.group(2), ("Consolas", 15, "bold"), color, 0),
-                (match.group(3).replace("|", ""), ("Microsoft YaHei UI", 10), "#CBD5E1", 0),
-                (match.group(4), ("Microsoft YaHei UI", 10), "#CBD5E1", 16),
-            ]
-        else:
-            first_color = self.percent_color(match.group(2))
-            second_color = self.percent_color(match.group(5))
-            parts = [
-                (match.group(1), ("Microsoft YaHei UI", 10), "#CBD5E1", 0),
-                (match.group(2), ("Consolas", 15, "bold"), first_color, 0),
-                (match.group(3).replace("|", ""), ("Microsoft YaHei UI", 10), "#CBD5E1", 0),
-                (match.group(4), ("Microsoft YaHei UI", 10), "#CBD5E1", 20),
-                (match.group(5), ("Consolas", 15, "bold"), second_color, 0),
-                (match.group(6).replace("|", ""), ("Microsoft YaHei UI", 10), "#CBD5E1", 0),
-                (match.group(7), ("Microsoft YaHei UI", 10), "#CBD5E1", 16),
-            ]
+        parts = []
+        for part_text, is_percentage, padx_left in detail_parts:
+            if is_percentage:
+                parts.append(
+                    (
+                        part_text,
+                        ("Consolas", 15, "bold"),
+                        self.percent_color(part_text),
+                        padx_left,
+                    )
+                )
+            else:
+                parts.append(
+                    (part_text, ("Microsoft YaHei UI", 10), "#CBD5E1", padx_left)
+                )
 
         while len(self.part_labels) < len(parts):
             label = tk.Label(self.parts_frame, bg=OVERLAY_BACKGROUND, anchor="w")
@@ -970,6 +982,7 @@ class OverlayApp:
 
         for label in self.part_labels[len(parts) :]:
             label.pack_forget()
+
     def percent_color(self, value_text: str) -> str:
         try:
             value = float(value_text.rstrip("%"))
