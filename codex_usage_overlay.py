@@ -34,11 +34,24 @@ CODEX_WINDOW_TITLES = {"codex", "chatgpt"}
 CODEX_PACKAGE_MARKERS = ("openai.codex_", "openai.chatgpt_")
 
 BAR_HEIGHT = 34
+BAR_MIN_WIDTH = 320
 BAR_MAX_WIDTH = 600
+BAR_HORIZONTAL_PADDING = 32
 BAR_SIDE_MARGIN = 12
 BAR_TOP_OFFSET = 2
 WINDOW_CONTROL_SAFE_WIDTH = 170
 OVERLAY_BACKGROUND = "#1B2126"
+PLAN_COLORS = {
+    "free": "#60A5FA",
+    "go": "#60A5FA",
+    "plus": "#C4B5FD",
+    "pro": "#60A5FA",
+    "prolite": "#60A5FA",
+    "team": "#60A5FA",
+    "business": "#60A5FA",
+    "enterprise": "#60A5FA",
+    "edu": "#60A5FA",
+}
 POLL_MS = 2500
 POSITION_MS = 400
 
@@ -354,6 +367,13 @@ def window_name(minutes: int | None) -> str:
     return f"{days}天"
 
 
+def display_plan_name(value: object) -> str:
+    plan = str(value or "").strip()
+    if plan.lower() == "prolite":
+        return "Pro"
+    return plan or "未知套餐"
+
+
 def parse_iso_to_local_time(value: str | None) -> str:
     if not value:
         return "未知"
@@ -452,19 +472,25 @@ def session_rate_snapshot() -> UsageSnapshot | None:
         return None
 
     limiting = min(values)
-    short_text = f"{primary_remaining:.0f}%" if primary_remaining is not None else "--"
-    week_text = f"{secondary_remaining:.0f}%" if secondary_remaining is not None else "--"
-    remaining_text = f"短{short_text} 周{week_text}"
+    windows: list[tuple[str, str]] = []
+    for part, percent in (
+        (primary, primary_remaining),
+        (secondary, secondary_remaining),
+    ):
+        if percent is None:
+            continue
+        name = window_name(part.get("window_minutes"))
+        percent_text = f"{percent:.0f}%"
+        windows.append(
+            (
+                f"{name}{percent_text}",
+                f"{name}剩余 {percent_text} 重置 {fmt_reset(part.get('resets_at'))}",
+            )
+        )
 
-    primary_window = window_name(primary.get("window_minutes"))
-    secondary_window = window_name(secondary.get("window_minutes"))
-    primary_reset = fmt_reset(primary.get("resets_at"))
-    secondary_reset = fmt_reset(secondary.get("resets_at"))
-    plan = rate_limits.get("plan_type") or "未知套餐"
-    detail = (
-        f"{primary_window}剩余 {short_text} 重置 {primary_reset} | "
-        f"{secondary_window}剩余 {week_text} 重置 {secondary_reset} | {plan}"
-    )
+    remaining_text = " ".join(summary for summary, _ in windows)
+    plan = display_plan_name(rate_limits.get("plan_type"))
+    detail = " | ".join([*(window_detail for _, window_detail in windows), plan])
 
     return UsageSnapshot(
         remaining_text=remaining_text,
@@ -967,8 +993,14 @@ class OverlayApp:
                     )
                 )
             else:
+                plan_color = PLAN_COLORS.get(part_text.casefold())
+                font = (
+                    ("Microsoft YaHei UI", 10, "bold")
+                    if plan_color
+                    else ("Microsoft YaHei UI", 10)
+                )
                 parts.append(
-                    (part_text, ("Microsoft YaHei UI", 10), "#CBD5E1", padx_left)
+                    (part_text, font, plan_color or "#CBD5E1", padx_left)
                 )
 
         while len(self.part_labels) < len(parts):
@@ -994,6 +1026,14 @@ class OverlayApp:
             return "#FBBF24"
         return "#34D399"
 
+    def requested_bar_width(self) -> int:
+        self.root.update_idletasks()
+        if self.parts_frame.winfo_manager():
+            detail_width = self.parts_frame.winfo_reqwidth()
+        else:
+            detail_width = self.detail_label.winfo_reqwidth()
+        return detail_width + self.close_button.winfo_reqwidth() + BAR_HORIZONTAL_PADDING
+
     def follow_codex(self) -> None:
         target = find_codex_window()
         if target is None:
@@ -1013,7 +1053,9 @@ class OverlayApp:
             visible_right = min(target.right, monitor_rect.right) if monitor_rect else target.right
             visible_width = max(240, visible_right - visible_left)
 
-            width = min(BAR_MAX_WIDTH, max(360, visible_width - BAR_SIDE_MARGIN * 2))
+            available_width = max(240, visible_width - BAR_SIDE_MARGIN * 2)
+            content_width = max(BAR_MIN_WIDTH, self.requested_bar_width())
+            width = min(BAR_MAX_WIDTH, available_width, content_width)
             safe_right = visible_right - WINDOW_CONTROL_SAFE_WIDTH
             centered_x = visible_left + (visible_width - width) // 2
             x = min(centered_x, safe_right - width)
